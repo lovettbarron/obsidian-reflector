@@ -4,7 +4,7 @@
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
 	"description": "Review meeting notes, find untagged notes, get tag suggestions, and track related TODOs.",
-	"author": "",
-	"authorUrl": "",
+	"author": "andrewlb",
+	"authorUrl": "https://andrewlb.com",
 	"isDesktopOnly": false
 }
