@@ -1,8 +1,128 @@
-/*
+.reflector-view-container {
+	padding: 10px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.reflector-section {
+	margin-bottom: 16px;
+}
 
-If your plugin does not need CSS, delete this file.
+.reflector-section-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 8px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
 
-*/
+.reflector-section-icon {
+	color: var(--text-muted);
+}
+
+.reflector-section-title {
+	font-weight: 600;
+	font-size: 0.9em;
+}
+
+.reflector-section-content {
+	padding-left: 4px;
+}
+
+.reflector-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.reflector-list-item {
+	padding: 4px 0;
+	border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.reflector-list-item:last-child {
+	border-bottom: none;
+}
+
+.reflector-link {
+	color: var(--text-normal);
+	text-decoration: none;
+	cursor: pointer;
+	display: block;
+}
+
+.reflector-link:hover {
+	color: var(--text-accent);
+}
+
+.reflector-empty-message {
+	color: var(--text-muted);
+	font-style: italic;
+	font-size: 0.85em;
+}
+
+.reflector-overflow-message {
+	color: var(--text-muted);
+	font-size: 0.8em;
+	margin-top: 4px;
+}
+
+.reflector-current {
+	background-color: var(--background-secondary);
+	border-radius: 6px;
+	padding: 8px;
+}
+
+.reflector-current-heading {
+	font-weight: 600;
+	font-size: 1em;
+}
+
+.reflector-current-date {
+	color: var(--text-muted);
+	font-size: 0.85em;
+	margin-top: 2px;
+}
+
+.reflector-tags {
+	margin-top: 6px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.reflector-tag {
+	background-color: var(--tag-background);
+	color: var(--tag-color);
+	padding: 2px 6px;
+	border-radius: 4px;
+	font-size: 0.8em;
+}
+
+.reflector-inline-tags {
+	color: var(--text-muted);
+	font-size: 0.75em;
+	margin-left: 8px;
+}
+
+.reflector-suggested-tag {
+	color: var(--text-accent);
+	font-weight: 500;
+}
+
+.reflector-tag-reason {
+	color: var(--text-muted);
+	font-size: 0.85em;
+}
+
+.reflector-todo-item {
+	display: block;
+}
+
+.reflector-todo-text {
+	display: block;
+}
+
+.reflector-todo-source {
+	color: var(--text-muted);
+	font-size: 0.8em;
+}
