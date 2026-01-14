@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-reflector",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Review meeting notes, find untagged notes, get tag suggestions, and track related TODOs.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
