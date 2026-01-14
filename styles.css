@@ -96,6 +96,15 @@
 	background: var(--background-primary-alt);
 }
 
+.reflector-card-active {
+	border-color: var(--interactive-accent);
+	background: var(--background-primary-alt);
+}
+
+.reflector-card-active .reflector-card-title {
+	color: var(--interactive-accent);
+}
+
 .reflector-card-title {
 	font-weight: 500;
 	color: var(--text-normal);
