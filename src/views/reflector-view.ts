@@ -1,12 +1,16 @@
-import { ItemView, WorkspaceLeaf, MarkdownView, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownView, setIcon, TFile } from "obsidian";
 import type ReflectorPlugin from "../main";
 import type { MeetingNote, RelatedTodoItem } from "../types";
 
 export const VIEW_TYPE_REFLECTOR = "reflector-view";
 
+const DAILY_NOTE_REGEX = /^\d{4}-\d{2}-\d{2}\.md$/;
+
 export class ReflectorView extends ItemView {
 	plugin: ReflectorPlugin;
 	private currentNote: MeetingNote | null = null;
+	private currentFile: TFile | null = null;
+	private currentLine: number = -1;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: ReflectorPlugin) {
@@ -37,36 +41,49 @@ export class ReflectorView extends ItemView {
 	}
 
 	async onCursorChange(): Promise<void> {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+		const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!activeView?.file) {
+			if (this.currentFile !== null || this.currentNote !== null) {
+				this.currentFile = null;
+				this.currentNote = null;
+				this.currentLine = -1;
+				await this.render();
+			}
+			return;
 		}
 
-		this.debounceTimer = setTimeout(async () => {
-			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			if (!activeView?.file) {
-				this.currentNote = null;
-				await this.render();
-				return;
-			}
+		const file = activeView.file;
+		const cursor = activeView.editor.getCursor();
+		const line = cursor.line;
 
-			const cursor = activeView.editor.getCursor();
-			const note = await this.plugin.parser.getMeetingNoteAtCursor(
-				activeView.file,
-				cursor.line
-			);
+		// Check if anything changed
+		const fileChanged = file.path !== this.currentFile?.path;
+		const lineChanged = line !== this.currentLine;
 
-			if (
-				note?.file.path !== this.currentNote?.file.path ||
-				note?.lineStart !== this.currentNote?.lineStart
-			) {
-				this.currentNote = note;
-				await this.render();
-			}
-		}, 150);
+		if (!fileChanged && !lineChanged) {
+			return; // Nothing changed, skip update
+		}
+
+		this.currentFile = file;
+		this.currentLine = line;
+
+		// Get meeting note at cursor
+		const note = await this.plugin.parser.getMeetingNoteAtCursor(file, line);
+
+		const noteChanged =
+			note?.file.path !== this.currentNote?.file.path ||
+			note?.lineStart !== this.currentNote?.lineStart;
+
+		if (fileChanged || noteChanged) {
+			this.currentNote = note;
+			await this.render();
+		}
 	}
 
 	async refresh(): Promise<void> {
 		this.currentNote = null;
+		this.currentFile = null;
+		this.currentLine = -1;
 		await this.onCursorChange();
 	}
 
@@ -75,15 +92,56 @@ export class ReflectorView extends ItemView {
 		container.empty();
 		container.addClass("reflector-container");
 
-		// Untagged Notes Section
-		await this.renderUntaggedSection(container);
+		// Check if we're in a daily note
+		const isDailyNote = this.currentFile && DAILY_NOTE_REGEX.test(this.currentFile.name);
 
-		// Current Note Context
+		// If in daily note, show meeting notes in this file
+		if (isDailyNote && this.currentFile) {
+			await this.renderDailyNoteMeetingsSection(container);
+		}
+
+		// Current Note Context (when cursor is in a meeting note)
 		if (this.currentNote) {
 			await this.renderCurrentNoteSection(container);
 			await this.renderRelatedNotesSection(container);
 			await this.renderTodosSection(container);
 			await this.renderTagSuggestionsSection(container);
+		}
+
+		// Untagged Notes Section (always show at bottom)
+		await this.renderUntaggedSection(container);
+	}
+
+	private async renderDailyNoteMeetingsSection(container: HTMLElement): Promise<void> {
+		if (!this.currentFile) return;
+
+		const meetings = await this.plugin.parser.parseDailyNote(this.currentFile);
+
+		if (meetings.length === 0) {
+			return; // No meetings in this file
+		}
+
+		const section = container.createDiv({ cls: "reflector-section" });
+		this.renderSectionHeader(section, "calendar", "Today's Meetings", meetings.length);
+
+		const content = section.createDiv({ cls: "reflector-cards" });
+		for (const note of meetings) {
+			const isActive = this.currentNote?.lineStart === note.lineStart;
+			const card = content.createDiv({
+				cls: `reflector-card reflector-card-clickable ${isActive ? "reflector-card-active" : ""}`,
+			});
+			card.createDiv({ text: note.heading, cls: "reflector-card-title" });
+
+			if (note.tags.length > 0) {
+				const tagsDiv = card.createDiv({ cls: "reflector-card-tags" });
+				for (const tag of note.tags.slice(0, 3)) {
+					tagsDiv.createSpan({ text: tag, cls: "reflector-tag reflector-tag-small" });
+				}
+			} else {
+				card.createDiv({ text: "No tags", cls: "reflector-card-empty" });
+			}
+
+			card.addEventListener("click", () => this.navigateToNote(note));
 		}
 	}
 

@@ -53,18 +53,23 @@ export default class ReflectorPlugin extends Plugin {
 		// Register settings tab
 		this.addSettingTab(new ReflectorSettingTab(this.app, this));
 
-		// Listen for cursor changes
+		// Listen for active file changes
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
 				this.updateView();
 			})
 		);
 
-		// Listen for editor changes (cursor movement)
+		// Listen for file open
 		this.registerEvent(
-			this.app.workspace.on("editor-change", () => {
+			this.app.workspace.on("file-open", () => {
 				this.updateView();
 			})
+		);
+
+		// Poll for cursor position changes (no native cursor-change event)
+		this.registerInterval(
+			window.setInterval(() => this.updateView(), 300)
 		);
 
 		// Listen for file modifications
