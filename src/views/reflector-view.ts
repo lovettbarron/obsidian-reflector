@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, MarkdownView, setIcon } from "obsidian";
 import type ReflectorPlugin from "../main";
-import type { MeetingNote, RelatedTodoItem } from "../types";
+import type { MeetingNote, TagSuggestion, TodoItem } from "../types";
 
 export const VIEW_TYPE_REFLECTOR = "reflector-view";
 
@@ -36,7 +36,11 @@ export class ReflectorView extends ItemView {
 		}
 	}
 
+	/**
+	 * Called when cursor position or active file changes
+	 */
 	async onCursorChange(): Promise<void> {
+		// Debounce rapid cursor movements
 		if (this.debounceTimer) {
 			clearTimeout(this.debounceTimer);
 		}
@@ -55,6 +59,7 @@ export class ReflectorView extends ItemView {
 				cursor.line
 			);
 
+			// Only re-render if note changed
 			if (
 				note?.file.path !== this.currentNote?.file.path ||
 				note?.lineStart !== this.currentNote?.lineStart
@@ -65,6 +70,9 @@ export class ReflectorView extends ItemView {
 		}, 150);
 	}
 
+	/**
+	 * Force a full refresh
+	 */
 	async refresh(): Promise<void> {
 		this.currentNote = null;
 		await this.onCursorChange();
@@ -73,46 +81,55 @@ export class ReflectorView extends ItemView {
 	private async render(): Promise<void> {
 		const container = this.containerEl.children[1] as HTMLElement;
 		container.empty();
-		container.addClass("reflector-container");
+		container.addClass("reflector-view-container");
 
 		// Untagged Notes Section
 		await this.renderUntaggedSection(container);
 
-		// Current Note Context
+		// Current Note Context (if we have one)
 		if (this.currentNote) {
 			await this.renderCurrentNoteSection(container);
 			await this.renderRelatedNotesSection(container);
-			await this.renderTodosSection(container);
 			await this.renderTagSuggestionsSection(container);
+			await this.renderTodosSection(container);
 		}
 	}
 
 	private async renderUntaggedSection(container: HTMLElement): Promise<void> {
+		const section = container.createDiv({ cls: "reflector-section" });
+		const header = section.createDiv({ cls: "reflector-section-header" });
+		setIcon(header.createSpan({ cls: "reflector-section-icon" }), "alert-circle");
+		header.createSpan({ text: "Untagged Notes", cls: "reflector-section-title" });
+
+		const content = section.createDiv({ cls: "reflector-section-content" });
+
 		const untagged = await this.plugin.parser.getUntaggedMeetingNotes();
 
-		// If all tagged, show subtle success state
 		if (untagged.length === 0) {
-			const successDiv = container.createDiv({ cls: "reflector-success" });
-			setIcon(successDiv.createSpan({ cls: "reflector-success-icon" }), "check-circle");
-			successDiv.createSpan({ text: "All notes tagged", cls: "reflector-success-text" });
+			content.createDiv({
+				text: "All meeting notes are tagged!",
+				cls: "reflector-empty-message",
+			});
 			return;
 		}
 
-		const section = container.createDiv({ cls: "reflector-section" });
-		this.renderSectionHeader(section, "alert-circle", "Untagged Notes", untagged.length);
-
-		const content = section.createDiv({ cls: "reflector-cards" });
-		for (const note of untagged.slice(0, 10)) {
-			const card = content.createDiv({ cls: "reflector-card reflector-card-clickable" });
-			card.createDiv({ text: note.heading, cls: "reflector-card-title" });
-			card.createDiv({ text: note.date, cls: "reflector-card-meta" });
-			card.addEventListener("click", () => this.navigateToNote(note));
+		const list = content.createEl("ul", { cls: "reflector-list" });
+		for (const note of untagged.slice(0, 20)) {
+			const item = list.createEl("li", { cls: "reflector-list-item" });
+			const link = item.createEl("a", {
+				text: `${note.date}: ${note.heading}`,
+				cls: "reflector-link",
+			});
+			link.addEventListener("click", (e) => {
+				e.preventDefault();
+				this.navigateToNote(note);
+			});
 		}
 
-		if (untagged.length > 10) {
-			section.createDiv({
-				text: `+ ${untagged.length - 10} more`,
-				cls: "reflector-overflow",
+		if (untagged.length > 20) {
+			content.createDiv({
+				text: `...and ${untagged.length - 20} more`,
+				cls: "reflector-overflow-message",
 			});
 		}
 	}
@@ -120,132 +137,153 @@ export class ReflectorView extends ItemView {
 	private async renderCurrentNoteSection(container: HTMLElement): Promise<void> {
 		if (!this.currentNote) return;
 
-		const section = container.createDiv({ cls: "reflector-section reflector-current-section" });
-		this.renderSectionHeader(section, "file-text", "Current Note");
+		const section = container.createDiv({ cls: "reflector-section reflector-current" });
+		const header = section.createDiv({ cls: "reflector-section-header" });
+		setIcon(header.createSpan({ cls: "reflector-section-icon" }), "file-text");
+		header.createSpan({ text: "Current Note", cls: "reflector-section-title" });
 
-		const card = section.createDiv({ cls: "reflector-card reflector-card-current" });
-		card.createDiv({ text: this.currentNote.heading, cls: "reflector-card-title" });
-		card.createDiv({ text: this.currentNote.date, cls: "reflector-card-meta" });
+		const content = section.createDiv({ cls: "reflector-section-content" });
+		content.createDiv({
+			text: this.currentNote.heading,
+			cls: "reflector-current-heading",
+		});
+		content.createDiv({
+			text: this.currentNote.date,
+			cls: "reflector-current-date",
+		});
 
 		if (this.currentNote.tags.length > 0) {
-			const tagsDiv = card.createDiv({ cls: "reflector-card-tags" });
+			const tagsDiv = content.createDiv({ cls: "reflector-tags" });
 			for (const tag of this.currentNote.tags) {
 				tagsDiv.createSpan({ text: tag, cls: "reflector-tag" });
 			}
-		} else {
-			card.createDiv({ text: "No tags", cls: "reflector-card-empty" });
 		}
 	}
 
 	private async renderRelatedNotesSection(container: HTMLElement): Promise<void> {
 		if (!this.currentNote) return;
 
-		const related = await this.plugin.parser.getRelatedMeetingNotes(this.currentNote);
-
-		if (related.length === 0 && this.currentNote.tags.length === 0) {
-			return; // Don't show empty section if no tags
-		}
-
 		const section = container.createDiv({ cls: "reflector-section" });
-		this.renderSectionHeader(section, "link", "Related Notes", related.length || undefined);
+		const header = section.createDiv({ cls: "reflector-section-header" });
+		setIcon(header.createSpan({ cls: "reflector-section-icon" }), "link");
+		header.createSpan({ text: "Related Notes", cls: "reflector-section-title" });
+
+		const content = section.createDiv({ cls: "reflector-section-content" });
+
+		const related = await this.plugin.parser.getRelatedMeetingNotes(
+			this.currentNote
+		);
 
 		if (related.length === 0) {
-			section.createDiv({
-				text: "No related notes found",
-				cls: "reflector-empty",
+			content.createDiv({
+				text: this.currentNote.tags.length === 0
+					? "Add tags to find related notes"
+					: "No related notes found",
+				cls: "reflector-empty-message",
 			});
 			return;
 		}
 
-		const content = section.createDiv({ cls: "reflector-cards" });
-		for (const note of related.slice(0, 8)) {
-			const card = content.createDiv({ cls: "reflector-card reflector-card-clickable" });
-			card.createDiv({ text: note.heading, cls: "reflector-card-title" });
-			card.createDiv({ text: note.date, cls: "reflector-card-meta" });
+		const list = content.createEl("ul", { cls: "reflector-list" });
+		for (const note of related.slice(0, 15)) {
+			const item = list.createEl("li", { cls: "reflector-list-item" });
+			const link = item.createEl("a", {
+				text: `${note.date}: ${note.heading}`,
+				cls: "reflector-link",
+			});
+			link.addEventListener("click", (e) => {
+				e.preventDefault();
+				this.navigateToNote(note);
+			});
 
-			// Show shared tags as context
-			const sharedTags = note.tags.filter((t) => this.currentNote!.tags.includes(t));
+			// Show shared tags
+			const sharedTags = note.tags.filter((t) =>
+				this.currentNote!.tags.includes(t)
+			);
 			if (sharedTags.length > 0) {
-				const tagsDiv = card.createDiv({ cls: "reflector-card-tags" });
-				for (const tag of sharedTags.slice(0, 3)) {
-					tagsDiv.createSpan({ text: tag, cls: "reflector-tag reflector-tag-small" });
-				}
+				const tagsSpan = item.createSpan({ cls: "reflector-inline-tags" });
+				tagsSpan.setText(sharedTags.join(" "));
 			}
+		}
+	}
 
-			card.addEventListener("click", () => this.navigateToNote(note));
+	private async renderTagSuggestionsSection(
+		container: HTMLElement
+	): Promise<void> {
+		if (!this.currentNote) return;
+
+		const section = container.createDiv({ cls: "reflector-section" });
+		const header = section.createDiv({ cls: "reflector-section-header" });
+		setIcon(header.createSpan({ cls: "reflector-section-icon" }), "tag");
+		header.createSpan({ text: "Suggested Tags", cls: "reflector-section-title" });
+
+		const content = section.createDiv({ cls: "reflector-section-content" });
+
+		const suggestions = this.plugin.tagService.suggestTags(this.currentNote);
+
+		if (suggestions.length === 0) {
+			content.createDiv({
+				text: "No tag suggestions",
+				cls: "reflector-empty-message",
+			});
+			return;
+		}
+
+		const list = content.createEl("ul", { cls: "reflector-list" });
+		for (const suggestion of suggestions.slice(0, 5)) {
+			const item = list.createEl("li", { cls: "reflector-list-item" });
+			item.createSpan({ text: suggestion.tag, cls: "reflector-suggested-tag" });
+			item.createSpan({
+				text: ` - ${suggestion.reason}`,
+				cls: "reflector-tag-reason",
+			});
 		}
 	}
 
 	private async renderTodosSection(container: HTMLElement): Promise<void> {
 		if (!this.currentNote) return;
 
-		const todos = await this.plugin.todoService.getTodosForMeetingNote(this.currentNote);
+		const section = container.createDiv({ cls: "reflector-section" });
+		const header = section.createDiv({ cls: "reflector-section-header" });
+		setIcon(header.createSpan({ cls: "reflector-section-icon" }), "check-square");
+		header.createSpan({ text: "Related TODOs", cls: "reflector-section-title" });
+
+		const content = section.createDiv({ cls: "reflector-section-content" });
+
+		const todos = await this.plugin.todoService.getTodosForMeetingNote(
+			this.currentNote
+		);
 
 		if (todos.length === 0) {
-			return; // Don't show empty TODO section
+			content.createDiv({
+				text: "No related TODOs",
+				cls: "reflector-empty-message",
+			});
+			return;
 		}
 
-		const section = container.createDiv({ cls: "reflector-section" });
-		this.renderSectionHeader(section, "check-square", "Related TODOs", todos.length);
-
-		const content = section.createDiv({ cls: "reflector-todos" });
-		for (const todo of todos.slice(0, 8)) {
-			const item = content.createDiv({ cls: "reflector-todo" });
-
-			const checkbox = item.createDiv({ cls: "reflector-todo-checkbox" });
-			setIcon(checkbox, "square");
-
-			const textDiv = item.createDiv({ cls: "reflector-todo-content" });
-			textDiv.createDiv({ text: todo.text, cls: "reflector-todo-text" });
-
-			// Context line with source and reason
-			const contextDiv = textDiv.createDiv({ cls: "reflector-todo-context" });
-			contextDiv.createSpan({ text: todo.file.basename, cls: "reflector-todo-source" });
-
-			if (todo.matchingTags.length > 0) {
-				contextDiv.createSpan({ text: " via ", cls: "reflector-todo-via" });
-				for (const tag of todo.matchingTags.slice(0, 2)) {
-					contextDiv.createSpan({ text: tag, cls: "reflector-tag reflector-tag-tiny" });
-				}
-			} else if (todo.relationReason === "linked") {
-				contextDiv.createSpan({ text: " (linked)", cls: "reflector-todo-via" });
-			}
-
-			item.addEventListener("click", () => this.navigateToTodo(todo));
-		}
-	}
-
-	private async renderTagSuggestionsSection(container: HTMLElement): Promise<void> {
-		if (!this.currentNote) return;
-
-		const suggestions = this.plugin.tagService.suggestTags(this.currentNote);
-
-		if (suggestions.length === 0) {
-			return; // Don't show empty suggestions
+		const list = content.createEl("ul", { cls: "reflector-list" });
+		for (const todo of todos.slice(0, 10)) {
+			const item = list.createEl("li", { cls: "reflector-list-item reflector-todo-item" });
+			const link = item.createEl("a", {
+				cls: "reflector-link",
+			});
+			link.createSpan({ text: todo.text, cls: "reflector-todo-text" });
+			link.createSpan({
+				text: ` (${todo.file.basename}${todo.heading ? ` -> ${todo.heading}` : ""})`,
+				cls: "reflector-todo-source",
+			});
+			link.addEventListener("click", (e) => {
+				e.preventDefault();
+				this.navigateToTodo(todo);
+			});
 		}
 
-		const section = container.createDiv({ cls: "reflector-section" });
-		this.renderSectionHeader(section, "sparkles", "Suggested Tags");
-
-		const content = section.createDiv({ cls: "reflector-suggestions" });
-		for (const suggestion of suggestions.slice(0, 5)) {
-			const item = content.createDiv({ cls: "reflector-suggestion" });
-			item.createSpan({ text: suggestion.tag, cls: "reflector-tag" });
-			item.createSpan({ text: suggestion.reason, cls: "reflector-suggestion-reason" });
-		}
-	}
-
-	private renderSectionHeader(
-		section: HTMLElement,
-		icon: string,
-		title: string,
-		count?: number
-	): void {
-		const header = section.createDiv({ cls: "reflector-header" });
-		setIcon(header.createSpan({ cls: "reflector-header-icon" }), icon);
-		header.createSpan({ text: title, cls: "reflector-header-title" });
-		if (count !== undefined) {
-			header.createSpan({ text: String(count), cls: "reflector-header-count" });
+		if (todos.length > 10) {
+			content.createDiv({
+				text: `...and ${todos.length - 10} more`,
+				cls: "reflector-overflow-message",
+			});
 		}
 	}
 
@@ -253,6 +291,7 @@ export class ReflectorView extends ItemView {
 		const leaf = this.app.workspace.getLeaf(false);
 		await leaf.openFile(note.file);
 
+		// Navigate to the specific line
 		const view = leaf.view;
 		if (view instanceof MarkdownView) {
 			view.editor.setCursor({ line: note.lineStart, ch: 0 });
@@ -263,7 +302,7 @@ export class ReflectorView extends ItemView {
 		}
 	}
 
-	private async navigateToTodo(todo: RelatedTodoItem): Promise<void> {
+	private async navigateToTodo(todo: TodoItem): Promise<void> {
 		const leaf = this.app.workspace.getLeaf(false);
 		await leaf.openFile(todo.file);
 
