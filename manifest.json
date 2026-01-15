@@ -6,5 +6,5 @@
 	"description": "Review meeting notes, find untagged notes, get tag suggestions, and track related TODOs.",
 	"author": "andrewlb",
 	"authorUrl": "https://andrewlb.com",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }

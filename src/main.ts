@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, MarkdownView } from "obsidian";
 import {
 	DEFAULT_SETTINGS,
 	ReflectorSettings,
@@ -28,48 +28,52 @@ export default class ReflectorPlugin extends Plugin {
 
 		// Auto-open sidebar when plugin loads
 		this.app.workspace.onLayoutReady(() => {
-			this.activateView();
+			void this.activateView();
 		});
 
 		// Add ribbon icon to open the view
-		this.addRibbonIcon("glasses", "Open Reflector", () => {
-			this.activateView();
+		this.addRibbonIcon("glasses", "Open reflector", () => {
+			void this.activateView();
 		});
 
 		// Add command to open the view
 		this.addCommand({
 			id: "open-reflector",
-			name: "Open Reflector sidebar",
-			callback: () => this.activateView(),
+			name: "Open sidebar",
+			callback: () => void this.activateView(),
 		});
 
 		// Add command to refresh the view
 		this.addCommand({
 			id: "refresh-reflector",
-			name: "Refresh Reflector",
-			callback: () => this.refreshView(),
+			name: "Refresh sidebar",
+			callback: () => void this.refreshView(),
 		});
 
 		// Register settings tab
 		this.addSettingTab(new ReflectorSettingTab(this.app, this));
 
-		// Listen for active file changes
+		// Listen for file open - this sets up tracking for the new file
 		this.registerEvent(
-			this.app.workspace.on("active-leaf-change", () => {
-				this.updateView();
+			this.app.workspace.on("file-open", (file) => {
+				this.handleFileOpen();
 			})
 		);
 
-		// Listen for file open
+		// Listen for active leaf changes - user switched to a different editor
 		this.registerEvent(
-			this.app.workspace.on("file-open", () => {
-				this.updateView();
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				// Only handle if it's a markdown view
+				if (leaf?.view instanceof MarkdownView) {
+					this.handleFileOpen();
+				}
 			})
 		);
 
-		// Poll for cursor position changes (no native cursor-change event)
+		// Poll for cursor position changes within the tracked editor
+		// This does NOT re-query which file is open - it only checks cursor position
 		this.registerInterval(
-			window.setInterval(() => this.updateView(), 300)
+			window.setInterval(() => this.checkCursorPosition(), 300)
 		);
 
 		// Listen for file modifications
@@ -81,7 +85,7 @@ export default class ReflectorPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_REFLECTOR);
+		// Note: Don't detach leaves here as it resets leaf position on reload
 	}
 
 	async loadSettings(): Promise<void> {
@@ -96,7 +100,7 @@ export default class ReflectorPlugin extends Plugin {
 		await this.saveData(this.settings);
 		// Reinitialize parser with new settings
 		this.parser = new MeetingNoteParser(this.app, this.settings);
-		this.refreshView();
+		void this.refreshView();
 	}
 
 	async activateView(): Promise<void> {
@@ -116,16 +120,38 @@ export default class ReflectorPlugin extends Plugin {
 		}
 
 		if (leaf) {
-			workspace.revealLeaf(leaf);
+			void workspace.revealLeaf(leaf);
 		}
 	}
 
-	private updateView(): void {
+	/**
+	 * Called when a file is opened or active leaf changes.
+	 * Gets the current markdown view and passes file/editor to the sidebar.
+	 */
+	private handleFileOpen(): void {
+		const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = markdownView?.file ?? null;
+		const editor = markdownView?.editor ?? null;
+
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_REFLECTOR);
 		for (const leaf of leaves) {
 			const view = leaf.view;
 			if (view instanceof ReflectorView) {
-				view.onCursorChange();
+				view.onFileOpen(file, editor);
+			}
+		}
+	}
+
+	/**
+	 * Called periodically to check cursor position in the tracked editor.
+	 * Does NOT re-query which file is open.
+	 */
+	private checkCursorPosition(): void {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_REFLECTOR);
+		for (const leaf of leaves) {
+			const view = leaf.view;
+			if (view instanceof ReflectorView) {
+				void view.checkCursorPosition();
 			}
 		}
 	}
@@ -135,7 +161,7 @@ export default class ReflectorPlugin extends Plugin {
 		for (const leaf of leaves) {
 			const view = leaf.view;
 			if (view instanceof ReflectorView) {
-				view.refresh();
+				void view.refresh();
 			}
 		}
 	}
