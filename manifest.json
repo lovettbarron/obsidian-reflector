@@ -1,7 +1,7 @@
 {
 	"id": "reflector",
 	"name": "Reflector",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "0.15.0",
 	"description": "Review meeting notes, find untagged notes, get tag suggestions, and track related TODOs.",
 	"author": "andrewlb",

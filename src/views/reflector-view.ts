@@ -44,9 +44,9 @@ export class ReflectorView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
-		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
-		}
+		// Clean up tracked state
+		this.trackedFile = null;
+		this.trackedEditor = null;
 	}
 
 	/**
@@ -369,7 +369,7 @@ export class ReflectorView extends ItemView {
 		console.debug("[Reflector] addTagToCurrentNote called", {
 			tag: suggestion.tag,
 			currentNote: this.currentNote?.heading,
-			currentFile: this.currentFile?.path,
+			trackedFile: this.trackedFile?.path,
 		});
 
 		// Capture the note reference immediately (before any async operations)
